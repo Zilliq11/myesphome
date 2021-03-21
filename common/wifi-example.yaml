@@ -1,0 +1,5 @@
+ssid: MY_SSID
+password: mypassword
+ap:
+  ssid: fallbackAP
+  password: APpassword

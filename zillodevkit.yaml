@@ -1,0 +1,150 @@
+substitutions:
+  devicename: "zillodevkit"
+  friendly_name: "Zillo Devkit"
+
+esphome:
+  name: $devicename
+  platform: ESP32
+  board: esp32doit-devkit-v1
+  includes:
+    - "src/custom_zillodevkit/effect_zillofeu.h"
+
+wifi: !include "common/wifi.yaml"
+captive_portal:
+logger:
+api:
+ota:
+
+light:
+  - platform: fastled_clockless
+    chipset: WS2812B
+    pin: GPIO27
+    num_leds: 64
+    rgb_order: GRB
+    name: "$friendly_name Matrix"
+    color_correct: [50%, 50%, 50%]
+    effects:
+      - addressable_lambda:
+          name: "Fire2012"
+          update_interval: 16ms
+          lambda: |-
+            static byte heat[64];
+
+            // Step 1.  Cool down every cell a little
+            for( int i = 0; i < 64; i++) {
+              heat[i] = qsub8( heat[i],  random8(0, ((COOLING * 10) / 64) + 2));
+            }
+            // Step 2.  Heat from each cell drifts 'up' and diffuses a little
+            for( int k= 64 - 1; k >= 2; k--) {
+              heat[k] = (heat[k - 1] + heat[k - 2] + heat[k - 2] ) / 3;
+            }
+            // Step 3.  Randomly ignite new 'sparks' of heat near the bottom
+            if( random8() < SPARKING ) {
+              int y = random8(7);
+              heat[y] = qadd8( heat[y], random8(160,255) );
+            }
+            // Step 4.  Map from heat cells to LED colors
+            for( int j = 0; j < 64; j++) {
+              CRGB color = HeatColor( heat[j]);
+              int pixelnumber;
+              if( gReverseDirection ) {
+                pixelnumber = (64-1) - j;
+              } else {
+                pixelnumber = j;
+              }
+              it[pixelnumber] = ESPColor(color.red, color.green, color.blue);
+            }
+      - addressable_color_wipe:
+          name: test color wipe adressable
+          colors:
+            - red: 100%
+              green: 100%
+              blue: 100%
+              num_leds: 64
+            - red: 0%
+              green: 0%
+              blue: 0%
+              num_leds: 64
+          add_led_interval: 100ms
+          reverse: False
+      - strobe:
+          name: Strobe police
+          colors:
+            - state: True
+              brightness: 50%
+              red: 100%
+              green: 0%
+              blue: 0%
+              duration: 30ms
+            - state: False
+              duration: 15ms
+            - state: True
+              brightness: 50%
+              red: 0%
+              green: 0%
+              blue: 100%
+              duration: 30ms
+            - state: False
+              duration: 15ms
+            - state: True
+              brightness: 50%
+              red: 0%
+              green: 100%
+              blue: 0%
+              duration: 30ms
+      - strobe:
+          name: notification charge complete
+          colors:
+            - state: True
+              brightness: 30%
+              red: 100%
+              green: 100%
+              blue: 0%
+              duration: 1000ms
+            - state: False
+              duration: 750ms
+      - random:
+          name: Random Effect
+          transition_length: 5s
+          update_interval: 7s
+      - addressable_flicker:
+          name: Flicker
+          update_interval: 10ms
+          intensity: 15%
+      - addressable_fireworks:
+          name: Fireworks
+          update_interval: 20ms
+          spark_probability: 15%
+          use_random_color: true
+          fade_out_rate: 60
+      - addressable_random_twinkle:
+          name: Random Twinkle
+          twinkle_probability: 20%
+          progress_interval: 4ms
+      - addressable_twinkle:
+          name: Twinkle
+          twinkle_probability: 15%
+          progress_interval: 2ms
+      - addressable_scan:
+          name: Scan Effect With Custom Values
+          move_interval: 100ms
+          scan_width: 1
+      - addressable_rainbow:
+          name: Rainbow Effect With Custom Values
+          speed: 20
+          width: 200
+
+binary_sensor:
+  - platform: status
+    name: "$friendly_name Status"
+
+switch:
+  - platform: restart
+    name: "$friendly_name Restart"
+
+sensor:
+  - platform: wifi_signal
+    name: "$friendly_name WiFi Signal"
+    update_interval: 10s
+  - platform: "uptime"
+    name: "$friendly_name Uptime"

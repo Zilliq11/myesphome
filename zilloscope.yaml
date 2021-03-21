@@ -1,0 +1,291 @@
+substitutions:
+  devicename: "zilloscope"
+  friendly_name: "Zilloscope"
+
+esphome:
+  name: $devicename
+  build_path: build/$devicename
+  platform: ESP32
+  board: esp32doit-devkit-v1
+
+  on_boot:
+    - priority: 1000
+      then:
+        - lambda: |-
+            fastled_base_fastledlightoutput->get_controller()->setDither(0);
+            id(notif_colorline_scroller).setup(32,1,4);
+    #- priority: 600
+    #  then:
+        - switch.turn_on: zilloscope_control_display
+        - lambda: |-
+            id(zilloscope_main).on_boot();
+
+  on_shutdown:
+    then:
+      - lambda: |-
+          id(zilloscope_main).on_shutdown();
+
+
+wifi: !include "common/wifi.yaml"
+
+logger:
+
+api:
+  services:
+    #effect start
+    - service: start_effect
+      variables:
+        name: string
+      then:
+        - lambda: |-
+            id(zilloscope_main).service_effect_start(name);
+    #effect stop
+    - service: stop_effect
+      then:
+        - lambda: |-
+            id(zilloscope_main).service_effect_stop();
+    #change mode
+    - service: mode
+      variables:
+        name: string
+      then:
+        - lambda: |-
+            id(zilloscope_main).service_mode(name);
+    #queue notification
+    - service: notify
+      variables:
+        type: int
+        text: string
+      then:
+        - lambda: |-
+            id(zilloscope_main).service_notify(type,text,-1);
+
+ota:
+
+binary_sensor:
+  - <<: !include "common/common_binary_sensors.yaml"
+
+switch:
+  - <<: !include "common/common_switchs.yaml"
+  - platform: template
+    id: zilloscope_control_display
+    name: "${friendly_name} Control Display"
+    turn_on_action:
+      - lambda: |-
+          id(zilloscope_display).set_enabled(true);
+    turn_off_action:
+      - lambda: |-
+          id(zilloscope_display).set_enabled(false);
+
+sensor:
+  - <<: !include "common/common_sensors.yaml"
+
+font:
+  - id: tinyfont
+    file: "fonts/pixelmix.ttf"
+    size: 8
+    glyphs: '!"%()+,-_.:*=°?~#0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz'
+  - id: font6px
+    file: "fonts/6px-Normal.ttf"
+    size: 8
+    glyphs: '!"%()+,-_.:*=°?~#0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz'
+  - id: font_8bithud
+    file: "fonts/8-bit-hud.ttf"
+    size: 5
+    glyphs: '!"%()+,-_.:*=°?~#0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz'
+    
+time:
+  - platform: homeassistant
+    id: homeassistant_time
+    timezone: Europe/Paris
+
+light:
+  - platform: fastled_clockless
+    chipset: WS2812B
+    pin: GPIO21
+    num_leds: 256
+    rgb_order: GRB
+    name: "$friendly_name Matrix"
+    id: zilloscope_matrix
+    color_correct: [25%, 25%, 25%]
+    default_transition_length : 0s
+    #gamma_correct: 0
+    restore_mode : ALWAYS_ON
+
+animation:
+  - file: "img/zilloscope/boot0.gif"
+    id: splash_animation
+    type: RGB24
+
+  - file: "img/zilloscope/boot1.gif"
+    id: boot_animation
+    type: RGB24
+    
+  - file: "img/zilloscope/train32.gif"
+    id: train_animation
+    type: RGB24
+  
+  - file: "img/zilloscope/matrix.gif"
+    id: matrix_animation
+    type: RGB24
+
+display:
+  - platform: addressable_light
+    id: zilloscope_display
+    addressable_light_id: zilloscope_matrix
+    width: 32
+    height: 8
+    update_interval: 16ms
+    lambda: |-
+      id(zilloscope_main).display_lambdacall(it);
+    pixel_mapper: |-
+      if (x % 2 == 0) {
+        return (x * 8) + y;
+      }
+      return (x * 8) + (7 - y);
+
+color_line_scroller:
+  - id: notif_colorline_scroller
+  
+text_scroller:
+  - id: notif_text_scroller
+
+zilloscope:
+  id: zilloscope_main
+  display_id: zilloscope_display
+  time_id: homeassistant_time
+  use_splash: "true"
+  
+  #Automations
+  on_boot:
+    then:
+      lambda: |-
+        //if you want to do something when zilloscope is booting
+  on_splash:
+    then:
+      lambda: |-
+        //if you want to do something when zilloscope is displaying splash screen
+  on_ready:
+    then:
+      lambda: |-
+        //if you want to do something when zilloscope is ready
+
+  #render lambdas
+  #boot animation forever
+  render_boot: |-
+    it.line(0, 0, 32, 8);
+    return true;
+    
+  #pause on frame 10 for 100 frames, then 110 for 100 frames. then end
+  render_splash: |-
+    //it=display
+    //frame= frame counter
+    if(frame==210) {
+      return false; //if returning false, it goes to on_ready component side
+    }
+    if(frame<=9 || frame==109) {
+      id(splash_animation).next_frame();
+    }
+    id(zilloscope_display).image(0, 0, id(splash_animation));
+    return true;  //splash continue
+  
+  #render time  
+  render_time: |-
+    //TODO: use text center
+    //TODO: fancier clock display
+    it.strftime(2, 0, id(font_8bithud),  Color(0xFFFFFF), ((millis()/1000)%2==0)?"%H:%M":"%H.%M", id(homeassistant_time).now());
+    return false;
+    
+  #render meteo icon and temp
+  #render_meteo: |-
+  #  //it=display
+  #  //frame= frame counter
+  #  //TODO
+  #  it.print(0, 0, id(tinyfont), Color(0x0000FF), "METEO");
+  #  return false;
+
+  #notifications
+  render_notification: |-
+    //it=display
+    //frame= frame counter
+    //text= notification text
+    //type= notification type
+    
+    if (type % 2 != 0) {
+      if(frame==0){
+        id(notif_text_scroller).setup(it,id(font6px),id(zilloscope_main).get_notification_text(),2,1,-1);
+      }
+    
+      //Multicolor line scroller
+      id(notif_colorline_scroller).draw(it, 0, 7);
+      id(notif_colorline_scroller).scroll();
+    }
+    
+    //Notification type
+    if(frame<((2*1000)/16)) {
+      //for first 2 seconds
+      switch (type) {
+        case 1:
+          it.print(16, 3, id(font_8bithud), Color(0x61d3e3), TextAlign::CENTER, "info");
+          break;
+        case 2:
+          if(frame==128) {
+            return false; //end of animation
+          }
+          id(train_animation).next_frame();
+          id(zilloscope_display).image(0, 0, id(train_animation));
+          return true;  //notif continue
+          break;
+        case 3: 
+          //Text scroller
+          id(notif_text_scroller).draw(it, id(font6px),Color(0xFFFFFF));
+          if(frame%5==0) {
+            //scroll every 5 frame
+            if(id(notif_text_scroller).scroll()) {
+              id(zilloscope_main).end_notification();
+              return false;
+            }
+          }
+      }
+      return true;
+    }
+    
+    
+  #ota
+  render_ota: |-
+    //TODO
+    it.print(0, 0, id(tinyfont), Color(0x0000FF), "OTA");
+    return false;
+    
+  #shutdown
+  render_shutdown: |-
+    //TODO
+    it.print(0, 0, id(tinyfont), Color(0xFF0000), "STOP");
+    return false;
+    
+  #effects
+  effects:
+    #custom effect (lambda)
+    - display_lambda:
+        name: "mycustomeffect"
+        lambda: |-
+          //it=display
+          //frame= frame counter
+          //render same animation as the boot animation but you can code what you want instead
+          id(boot_animation).next_frame();
+          it.image(0, 6, id(boot_animation));
+     #effet integré 'feu'
+    - display_fire:
+        name: "lefeu"
+        width: 32
+        height: 8
+     #effet integré 'bubbles'
+    - display_bubbles:
+        name: "bubbles"
+        width: 32
+        height: 8
+     #effet integré 'matrix' (wip)
+    - display_matrix:
+        name: "matrix"
+        width: 32
+        height: 8
